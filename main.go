@@ -10,10 +10,25 @@ import (
 The upstream stages closes their outbound channel when they have sent all their values downstream.
 The downstream stages keep receiving values from the inbound channel until the channel is closed.
 This pattern allows each receiving stage to be written as range loop.
+
+Best practice
+	The goroutine that creates the channel will be the goroutine that will write to the channel and
+is also responsible for closing the channel.
+
 *** quotation Deepak kumar Gunjetti
 
 Tüm stageler kendi channellarını olustururlar, channellarındaki degerlerin hepsini asagıya gonderırler ve channellarını kapatırlar.
 Bu şekilde bir sonraki stage range ile channel kapanana kadar gelen değerleri alabilirler.
+
+!!!  Best practice - Channel Ownership
+	Kanalı olusturan goroutine, kanala yazmak ve kanalı kapatmakla sorumludur.
+	Kanalı kullanan goroutine sadece kanaldaki degerleri okuyabilir. Kapatamaz.
+	Bu best practice,
+		- Nil channel a yazmak nedeniyle
+		- Nil channel ı kapatmak nedeniyle
+		- Kapalı channel a yazmak nedeniyle
+		- Kapalı channel ı kapatmak nedeniyle
+    deadlock ve panic olusturmayı engelleyecektir.
 */
 
 func generator(done chan struct{}, nums ...int) chan int {
