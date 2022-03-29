@@ -2,41 +2,65 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 )
 
-func generator(nums ...int) chan int {
-	out := make(chan int)
+/*
+The upstream stages closes their outbound channel when they have sent all their values downstream.
+The downstream stages keep receiving values from the inbound channel until the channel is closed.
+This pattern allows each receiving stage to be written as range loop.
+*** quotation Deepak kumar Gunjetti
 
+Tüm stageler kendi channellarını olustururlar, channellarındaki degerlerin hepsini asagıya gonderırler ve channellarını kapatırlar.
+Bu şekilde bir sonraki stage range ile channel kapanana kadar gelen değerleri alabilirler.
+*/
+
+func generator(done chan struct{}, nums ...int) chan int {
+	out := make(chan int)
 	go func() {
+		defer close(out)
 		for _, n := range nums {
-			out <- n
+			select {
+			case out <- n:
+			case <-done:
+				return
+			}
 		}
-		close(out)
 	}()
 	return out
 }
 
-func square(in chan int) chan int {
+func square(done chan struct{}, in chan int) chan int {
 	out := make(chan int)
 	go func() {
+		defer close(out)
+
 		for n := range in {
-			out <- n * n
+			select {
+			case out <- n * n:
+			case <-done:
+				return
+			}
 		}
-		close(out)
 	}()
 	return out
 }
 
-func merge(cs ...chan int) chan int {
+func merge(done chan struct{}, cs ...chan int) chan int {
 	out := make(chan int)
 	var wg sync.WaitGroup
 
 	output := func(c <-chan int) {
+		defer wg.Done()
+
 		for n := range c {
-			out <- n
+			select {
+			case out <- n:
+			case <-done:
+				return
+			}
 		}
-		wg.Done()
 	}
 
 	wg.Add(len(cs))
@@ -52,15 +76,18 @@ func merge(cs ...chan int) chan int {
 }
 
 func main() {
-	in := generator(10000, 10, 100)
+	done := make(chan struct{})
+	in := generator(done, 10000, 10, 100)
 
-	c1 := square(in)
-	c2 := square(in)
+	c1 := square(done, in)
+	c2 := square(done, in)
 
-	out := merge(c1, c2)
+	out := merge(done, c1, c2)
 
 	for i := range out {
 		fmt.Println(i)
 	}
+	close(done)
 
+	fmt.Println("Number of active goroutines : ", runtime.NumGoroutine())
 }
